@@ -9,7 +9,7 @@
 -- ============================================================================
 
 -- ============================================================================
--- SECCIÓN 1: CREACIÓN DE TABLAS
+-- SECCIÓN 1: CREACIÓN DE TABLAS 
 -- ============================================================================
 
 CREATE TABLE estado (
@@ -35,7 +35,7 @@ CREATE TABLE parroquia (
 );
 
 CREATE TABLE usuario (
-    id_usuario   SERIAL PRIMARY KEY,
+    id_usuario   INT          PRIMARY KEY,
     contrasena   VARCHAR(255) NOT NULL,
     tipo_usuario VARCHAR(20)  NOT NULL
 );
@@ -159,4 +159,110 @@ CREATE TABLE credencial_digital (
         REFERENCES guia(nro_rtn, cod_licencia)
         ON UPDATE CASCADE
 );
+
+-- ============================================================================
+-- SECCIÓN 2: SECUENCIAS Y RESTRICCIONES EXPLÍCITAS CON ALTER TABLE
+--            (Módulo Mariana Alejandra Cabrera Cisneros)
+-- ============================================================================
+
+CREATE SEQUENCE seq_usuario_id
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER TABLE usuario
+    ALTER COLUMN id_usuario SET DEFAULT nextval('seq_usuario_id');
+
+ALTER SEQUENCE seq_usuario_id OWNED BY usuario.id_usuario;
+
+CREATE SEQUENCE seq_credencial_cod
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER TABLE credencial_digital
+    ALTER COLUMN cod_verificacion SET DEFAULT ('RV-' || LPAD(nextval('seq_credencial_cod')::TEXT, 6, '0'));
+
+ALTER SEQUENCE seq_credencial_cod OWNED BY credencial_digital.cod_verificacion;
+
+ALTER TABLE usuario
+    ADD CONSTRAINT chk_usuario_contrasena_no_vacia
+        CHECK (length(trim(contrasena)) > 0),
+    ADD CONSTRAINT chk_usuario_tipo_valido
+        CHECK (tipo_usuario IN ('Visitante', 'Guia', 'Comercio', 'Institucion'));
+
+ALTER TABLE visitante
+    ADD CONSTRAINT chk_visitante_cedula_o_pasaporte
+        CHECK (
+            (cedula IS NOT NULL AND pasaporte IS NULL)
+            OR
+            (cedula IS NULL AND pasaporte IS NOT NULL)
+        ),
+    ADD CONSTRAINT chk_visitante_cedula_no_vacia
+        CHECK (cedula IS NULL OR length(trim(cedula)) > 0),
+    ADD CONSTRAINT chk_visitante_pasaporte_no_vacio
+        CHECK (pasaporte IS NULL OR length(trim(pasaporte)) > 0);
+
+ALTER TABLE guia
+    ADD CONSTRAINT chk_guia_anos_trayectoria
+        CHECK (anos_trayectoria >= 0),
+    ADD CONSTRAINT chk_guia_tarifa_hora
+        CHECK (tarifa_hora > 0);
+
+ALTER TABLE comercio
+    ADD CONSTRAINT uq_comercio_razon_social
+        UNIQUE (razon_social),
+    ADD CONSTRAINT chk_comercio_aforo
+        CHECK (aforo > 0),
+    ADD CONSTRAINT chk_comercio_permiso_sanitario
+        CHECK (length(trim(nro_permiso_sanitario)) > 0);
+
+ALTER TABLE institucion
+    ADD CONSTRAINT uq_institucion_denominacion_oficial
+        UNIQUE (denominacion_oficial),
+    ADD CONSTRAINT chk_institucion_nivel_territorial
+        CHECK (nivel_territorial IN ('nacional', 'estatal', 'municipal'));
+
+ALTER TABLE hito_turistico
+    ADD CONSTRAINT chk_hito_estado_operativo
+        CHECK (estado_operativo IN (
+            'Disponible',
+            'En restauración',
+            'Clausurado temporalmente',
+            'Cerrado permanentemente'
+        )),
+    ADD CONSTRAINT chk_hito_latitud
+        CHECK (latitud BETWEEN -90 AND 90),
+    ADD CONSTRAINT chk_hito_longitud
+        CHECK (longitud BETWEEN -180 AND 180),
+    ADD CONSTRAINT chk_hito_horario_coherente
+        CHECK (
+            es_libre_acceso = TRUE
+            OR (hora_apertura IS NOT NULL AND hora_cierre IS NOT NULL AND hora_cierre > hora_apertura)
+        );
+
+ALTER TABLE hito_categoria
+    ADD CONSTRAINT chk_hito_categoria_dominio
+        CHECK (categoria IN ('hito_turistico', 'hito_cultural', 'hito_natural'));
+
+ALTER TABLE credencial_digital
+    ADD CONSTRAINT chk_credencial_estado
+        CHECK (estado IN ('emitido', 'canjeado', 'cancelado', 'vencido')),
+    ADD CONSTRAINT chk_credencial_monto_abonado
+        CHECK (monto_abonado >= 0),
+    ADD CONSTRAINT chk_credencial_cant_beneficiarios
+        CHECK (cant_beneficiarios >= 1),
+    ADD CONSTRAINT chk_credencial_validador_exclusivo
+        CHECK (
+            estado <> 'canjeado'
+            OR (
+                (rif_comercio IS NOT NULL AND guia_nro_rtn IS NULL AND guia_cod_licencia IS NULL)
+                OR
+                (rif_comercio IS NULL AND guia_nro_rtn IS NOT NULL AND guia_cod_licencia IS NOT NULL)
+            )
+        );
 
